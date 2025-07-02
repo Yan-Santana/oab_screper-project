@@ -1,0 +1,5 @@
+playwright>=1.30.0  # Usada para automação do navegador e screenshots (web scraping)
+
+# OCR para extrair texto de imagens (situação do advogado)
+pytesseract>=0.3.7  # Usada para fazer OCR (reconhecimento óptico de caracteres) nas imagens do botão de situação
+Pillow>=10.0.0      # Usada para abrir, recortar e pré-processar imagens antes de passar para o OCR
