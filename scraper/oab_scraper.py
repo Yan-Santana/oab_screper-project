@@ -2,14 +2,18 @@ from playwright.async_api import async_playwright
 import asyncio
 from typing import Dict, Any
 import re
+import pytesseract
+from PIL import Image
+import requests
+from io import BytesIO
 
 
 def validar_parametros(name: str, uf: str) -> Dict[str, Any]:
     """
-    Valida se os parâmetros nome e UF estão preenchidos corretamente.
-    Retorna um dicionário com erro se a validação falhar.
+    Valido se os parametros de nome e UF estao preenchidos corretamente.
+    Vou retornar um dicionario com erro se a validacaao falhar.
     """
-    # Remove espaços em branco e verifica se está vazio
+    # Remove espacos em branco e verifica se esta vazio
     name_clean = name.strip() if name else ""
     uf_clean = uf.strip() if uf else ""
     
@@ -21,25 +25,25 @@ def validar_parametros(name: str, uf: str) -> Dict[str, Any]:
     if not uf_clean:
         erros.append("UF é obrigatória")
     
-    # Validação adicional: nome deve ter pelo menos 2 palavras (nome completo)
+    # Validacao adicional: nome deve ter pelo menos 2 palavras (nome completo)
     if name_clean and len(name_clean.split()) < 2:
         erros.append("Nome completo é obrigatório (pelo menos nome e sobrenome)")
     
     if erros:
-        return {"error": f"Validação falhou: {'; '.join(erros)}"}
+        return {"error": f"Validacao falhou: {'; '.join(erros)}"}
     
     return {"name": name_clean, "uf": uf_clean}
 
 
 async def extrair_dados_avancados(page, row) -> Dict[str, Any]:
     """
-    Extrai dados avançados do resultado, incluindo data de inscrição e situação.
-    Usa múltiplos seletores para maior tolerância a variações de layout.
+    Extrai dados avancados do resultado, incluindo data de inscricao e situacao.
+    Uso multiplos seletores para a variacoes de layout.
     """
     dados = {}
     
     try:
-        # Nome - múltiplos seletores possíveis
+        # Nome - múltiplos seletores possiveis
         nome_selectors = [
             ".rowName span:nth-child(2)",
             ".rowName span:last-child",
@@ -53,7 +57,7 @@ async def extrair_dados_avancados(page, row) -> Dict[str, Any]:
                 dados["nome"] = (await nome_elem.inner_text()).strip()
                 break
         
-        # Inscrição - múltiplos seletores
+        # Inscricao - múltiplos seletores
         inscricao_selectors = [
             ".rowInsc span:last-child",
             ".rowInsc .inscricao",
@@ -93,7 +97,7 @@ async def extrair_dados_avancados(page, row) -> Dict[str, Any]:
                 dados["categoria"] = (await tipo_elem.inner_text()).strip()
                 break
         
-        # Data de inscrição - busca por padrões de data
+        # Data de inscricao - busca por padroes de data
         data_selectors = [
             ".rowData span:last-child",
             ".rowData .data",
@@ -105,12 +109,12 @@ async def extrair_dados_avancados(page, row) -> Dict[str, Any]:
             data_elem = await row.query_selector(selector)
             if data_elem:
                 data_text = (await data_elem.inner_text()).strip()
-                # Verifica se contém padrão de data
+                # Verifica se contém padrao de data
                 if re.search(r'\d{2}/\d{2}/\d{4}', data_text):
                     dados["data_inscricao"] = data_text
                     break
         
-        # Situação atual - busca por status/situação
+        # Situacao atual - busca por status/situacao
         situacao_selectors = [
             ".rowSituacao span:last-child",
             ".rowSituacao .situacao",
@@ -125,10 +129,10 @@ async def extrair_dados_avancados(page, row) -> Dict[str, Any]:
                 dados["situacao"] = (await situacao_elem.inner_text()).strip()
                 break
         
-        # Se não encontrou situação específica, tenta buscar no texto completo da linha
+        # Se nao encontrou situacao especifica, tenta buscar no texto completo da linha
         if "situacao" not in dados:
             row_text = await row.inner_text()
-            # Busca por palavras-chave de situação
+            # Busca por palavras-chave de situacao
             situacao_keywords = ["ATIVO", "INATIVO", "SUSPENSO", "CANCELADO", "REGULAR"]
             for keyword in situacao_keywords:
                 if keyword in row_text.upper():
@@ -136,7 +140,7 @@ async def extrair_dados_avancados(page, row) -> Dict[str, Any]:
                     break
         
         # Busca alternativa: tenta extrair todos os spans da linha
-        if len(dados) < 4:  # Se não conseguiu extrair pelo menos 4 campos
+        if len(dados) < 4:  # Se nao conseguiu extrair pelo menos 4 campos
             all_spans = await row.query_selector_all("span")
             span_texts = []
             for span in all_spans:
@@ -160,17 +164,33 @@ async def extrair_dados_avancados(page, row) -> Dict[str, Any]:
                     dados["nome"] = text
         
     except Exception as e:
-        print(f"Erro ao extrair dados avançados: {e}")
+        print(f"Erro ao extrair dados avancados: {e}")
     
     return dados
 
 
+async def extrair_situacao_modal(page):
+    # Espera o modal aparecer
+    await page.wait_for_selector("#imgDetail", timeout=10000)
+    img_elem = await page.query_selector("#imgDetail")
+    img_url = await img_elem.get_attribute("src")
+    if img_url.startswith("/"):
+        img_url = "https://cna.oab.org.br" + img_url
+    img_data = requests.get(img_url).content
+    image = Image.open(BytesIO(img_data))
+    texto = pytesseract.image_to_string(image, lang="eng")
+    for palavra in ["REGULAR", "SUSPENSO", "CANCELADO", "INATIVO"]:
+        if palavra in texto.upper():
+            return palavra
+    return texto.strip()
+
+
 async def scrape_oab_async(name: str, uf: str) -> Dict[str, Any]:
     """ 
-    Extrai informações de um advogado a partir do nome e UF. De forma assíncrona.
-    Retorna um dicionário (Dict[str, Any]) com as informações extraídas ou erro.
+    Extrai informacoes de um advogado a partir do nome e UF. De forma assincrona.
+    Retorna um dicionario (Dict[str, Any]) com as informacoes extraidas ou erro.
     """
-    # Validação dos parâmetros
+    # Validacao dos parâmetros
     validacao = validar_parametros(name, uf)
     if "error" in validacao:
         return validacao
@@ -202,37 +222,40 @@ async def scrape_oab_async(name: str, uf: str) -> Dict[str, Any]:
             for selector in selectors_tentados:
                 row = await page.query_selector(selector)
                 if row:
-                    print(f"Resultado encontrado usando selector: {selector}")
                     break
             
             if not row:
                 # Tenta buscar por qualquer elemento que contenha o nome
                 nome_elements = await page.query_selector_all(f"*:has-text('{name_clean.split()[0]}')")
                 if nome_elements:
-                    row = nome_elements[0]
-                    print("Resultado encontrado por busca de texto")
-            
-            if not row:
-                return {"error": f"Nenhum resultado encontrado para: {name_clean} - {uf_clean}"}
-            
-            print("Resultado encontrado!")
-
-            # Extrai dados usando método avançado
+                    # Verifica se algum dos elementos realmente bate com a UF desejada
+                    for el in nome_elements:
+                        el_text = await el.inner_text()
+                        if uf_clean.upper() in el_text.upper():
+                            row = el
+                            break
+                if not row:
+                    return {"error": f"Nenhum resultado encontrado para: {name_clean} - {uf_clean}"}
+            # Só executa o restante se encontrou resultado
+            # Extrai dados usando método avancado
             data = await extrair_dados_avancados(page, row)
-            
+            # Tenta clicar e extrair situacao do modal
+            try:
+                await row.click()
+                situacao_modal = await extrair_situacao_modal(page)
+                data["situacao"] = situacao_modal
+            except Exception:
+                if "situacao" not in data or not data["situacao"]:
+                    data["situacao"] = "Nao encontrada"
             # Garante que todos os campos obrigatórios estejam presentes
             campos_obrigatorios = ["nome", "inscricao", "uf", "categoria"]
             for campo in campos_obrigatorios:
                 if campo not in data or not data[campo]:
-                    data[campo] = "Não encontrado"
-            
-            # Adiciona campos opcionais se não encontrados
+                    data[campo] = "Nao encontrado"
+            # Adiciona campos opcionais se nao encontrados
             if "data_inscricao" not in data:
-                data["data_inscricao"] = "Não encontrada"
-            if "situacao" not in data:
-                data["situacao"] = "Não encontrada"
+                data["data_inscricao"] = "Nao encontrada"
 
-            print("Dados extraídos com sucesso!!!")
         except Exception as e:
             print(f"Erro durante a navegacao ou busca: {e}")
             data = {"error": f"Erro durante a navegacao ou busca: {e}"}
@@ -243,8 +266,8 @@ async def scrape_oab_async(name: str, uf: str) -> Dict[str, Any]:
 
 def scrape_oab(name: str, uf: str) -> Dict[str, Any]:
     """
-    Extrai informações do advogado a partir do nome e UF. De forma síncrona.
-    Retorna um dicionário (Dict[str, Any]) com as informações extraídas ou erro.
+    Extrai informacoes do advogado a partir do nome e UF. De forma sincrona.
+    Retorna um dicionario (Dict[str, Any]) com as informacoes extraidas ou erro.
     """
     try:
         loop = asyncio.get_event_loop()
@@ -268,32 +291,33 @@ def scrape_oab(name: str, uf: str) -> Dict[str, Any]:
 
 
 if __name__ == "__main__":
-    # Testes com diferentes cenários de validação
+    # Testes com diferentes cenarios de validacao
     consultas = [
-        ("Luiz Carlos Benedito Hormung Junior", "MS"),  # Válido
+        ("Luiz Carlos Benedito Hormung Junior", "BA"),  # Valido
+        ("Luiz Carlos Benedito Hormung Junior", "MS"), 
         ("Luiz", "MS"),  # Nome incompleto
         ("", "MS"),  # Nome vazio
         ("Luiz Carlos Benedito Hormung Junior", ""),  # UF vazia
         ("", ""),  # Ambos vazios
-        ("   ", "   ")  # Apenas espaços
+        ("   ", "   ")  # Apenas espacos
     ]
 
     for nome, uf in consultas:
-        print("\n" + "=" * 60)
+        print("\n" + "=" * 80)
         print(f"🔎 Iniciando busca: '{nome}' - '{uf}'\n")
 
         resultado = scrape_oab(nome, uf)
-
+        print("")
         print(f"🔎 Consulta finalizada: '{nome}' - '{uf}'")
         if "error" in resultado:
             print(f"❌ {resultado['error']}")
         else:
-            print("✅ Resultado encontrado:")
+            print("Resultado:")
             print(f"   Nome           : {resultado['nome']}")
-            print(f"   Inscrição      : {resultado['inscricao']}")
+            print(f"   Inscricao      : {resultado['inscricao']}")
             print(f"   UF             : {resultado['uf']}")
             print(f"   Categoria      : {resultado['categoria']}")
-            print(f"   Data Inscrição : {resultado['data_inscricao']}")
-            print(f"   Situação       : {resultado['situacao']}")
+            print(f"   Data Inscricao : {resultado['data_inscricao']}")
+            print(f"   Situacao       : {resultado['situacao']}")
 
 
