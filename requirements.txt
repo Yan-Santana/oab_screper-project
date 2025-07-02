@@ -4,3 +4,7 @@ playwright>=1.30.0  # Usada p automação do navegador e screenshots (web scrapi
 pytesseract>=0.3.7  # Usada p fazer OCR (reconhecimento óptico de caracteres) nas imagens do botão de situação
 Pillow>=10.0.0      # Usada p abrir, recortar e pré-processar imagens antes de passar p o OCR
 requests            # Usada p usada p fazer o download da imagem(situacao do advogado).envia uma requisição GET p a URL da imagem e vai pegar o conteúdo bruto (.content), que nesse caso são os bytes da imagem.
+
+fastapi>=0.100.0    # Framework para criação da API
+pydantic>=1.10.0    # Validação de dados e modelos
+uvicorn[standard]>=0.22.0  # Servidor ASGI para rodar a API FastAPI
