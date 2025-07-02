@@ -1,0 +1,52 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pyc
+
+# Ambientes virtuais
+venv/
+.env/
+.envrc
+.venv/
+
+# Playwright
+playwright-report/
+playwright/.cache/
+
+# FastAPI/Uvicorn
+*.log
+
+# VSCode
+.vscode/
+
+# MacOS
+.DS_Store
+
+# Arquivos temporários
+*.swp
+*.swo
+*.tmp
+
+# Arquivos de configuração locais
+*.local
+
+# Jupyter Notebooks
+.ipynb_checkpoints/
+
+# Outros
+*.sqlite3
+*.db
+*.bak
+
+# Ignore arquivos de testes e relatórios
+htmlcov/
+.coverage
+.tox/
+.pytest_cache/
+
+# Ignore arquivos de build
+build/
+dist/
+*.egg-info/ 
