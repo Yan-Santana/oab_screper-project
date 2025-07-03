@@ -8,3 +8,7 @@ requests            # Usada p usada p fazer o download da imagem(situacao do adv
 fastapi>=0.100.0    # Framework para criação da API
 pydantic>=1.10.0    # Validação de dados e modelos
 uvicorn[standard]>=0.22.0  # Servidor ASGI para rodar a API FastAPI
+
+langchain  # Framework para construção de aplicações com LLMs (Large Language Models)
+langchain_community  # Componentes e integrações da comunidade para LangChain
+langchain_openai  # Integração do LangChain com modelos da OpenAI
