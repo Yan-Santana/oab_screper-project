@@ -212,12 +212,13 @@ Resposta: A situação do advogado Pedro Santos (MG) é REGULAR.
 ![Terminal da API](docs/images/terminalAPI.jpeg)
 
 ### API REST - Demonstração
-![API REST GIF](docs/gifs/API.gif)
+![API REST GIF](https://github.com/Yan-Santana/oab_screper-project/blob/main/docs/gifs/API.gif?raw=true)
 
 ### Screenshots Adicionais
-![Screenshot 1](docs/images/Screenshot%20at%20Jul%2003%2022-30-23.png)
-![Screenshot 2](docs/images/Screenshot%20at%20Jul%2003%2022-29-29.png)
-![Screenshot 3](docs/images/Screenshot%20at%20Jul%2003%2022-28-22.png)
+![Additional Screenshot](https://github.com/Yan-Santana/oab_screper-project/blob/main/docs/images/Screenshot%20at%20Jul%2003%2022-28-22.png)
+![Additional Screenshot](https://github.com/Yan-Santana/oab_screper-project/blob/main/docs/images/Screenshot%20at%20Jul%2003%2022-29-29.png)
+![Additional Screenshot](https://github.com/Yan-Santana/oab_screper-project/blob/main/docs/images/Screenshot%20at%20Jul%2003%2022-30-23.png)
+
 
 ## 🧪 Testes
 
