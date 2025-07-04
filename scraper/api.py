@@ -31,7 +31,7 @@ class OABRequest(BaseModel): # Modelo para requisicao de colsulta OAB
     uf: str = Field(..., description="UF/Seccional do advogado", min_length=2, max_length=2)
     
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "name": "FULANO DE TAL",
                 "uf": "SP"
@@ -48,7 +48,7 @@ class OABResponse(BaseModel): # Modelo para resposta da consulta OAB
     error: Optional[str] = Field(None, description="Mensagem de erro se a consulta falhar")
         
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "oab": "123456",
                 "name": "FULANO DE TAL",

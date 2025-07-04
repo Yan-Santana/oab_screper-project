@@ -6,6 +6,7 @@ import pytesseract
 from PIL import Image
 import requests
 from io import BytesIO
+import unicodedata
 
 
 def validar_parametros(name: str, uf: str) -> Dict[str, Any]:
@@ -133,7 +134,7 @@ async def extrair_dados_avancados(page, row) -> Dict[str, Any]:
         if "situacao" not in dados:
             row_text = await row.inner_text()
             # Busca por palavras-chave de situacao
-            situacao_keywords = ["ATIVO", "INATIVO", "SUSPENSO", "CANCELADO", "REGULAR"]
+            situacao_keywords = ["ATIVO", "INATIVO", "SUSPENSO", "CANCELADO", "REGULAR", "FALECIDO"]
             for keyword in situacao_keywords:
                 if keyword in row_text.upper():
                     dados["situacao"] = keyword
@@ -158,7 +159,7 @@ async def extrair_dados_avancados(page, row) -> Dict[str, Any]:
                     dados["uf"] = text
                 elif text.upper() in ["ADVOGADO", "ESTAGIÁRIO", "ESTAGIARIO"] and "categoria" not in dados:
                     dados["categoria"] = text
-                elif text.upper() in ["ATIVO", "INATIVO", "SUSPENSO", "CANCELADO", "REGULAR"] and "situacao" not in dados:
+                elif text.upper() in ["ATIVO", "INATIVO", "SUSPENSO", "CANCELADO", "REGULAR", "FALECIDO"] and "situacao" not in dados:
                     dados["situacao"] = text
                 elif len(text.split()) >= 2 and "nome" not in dados:
                     dados["nome"] = text
@@ -169,8 +170,11 @@ async def extrair_dados_avancados(page, row) -> Dict[str, Any]:
     return dados
 
 
+def remover_acentos(txt):
+    return ''.join(c for c in unicodedata.normalize('NFD', txt) if unicodedata.category(c) != 'Mn')
+
+
 async def extrair_situacao_modal(page):
-    # Espera o modal aparecer
     await page.wait_for_selector("#imgDetail", timeout=10000)
     img_elem = await page.query_selector("#imgDetail")
     img_url = await img_elem.get_attribute("src")
@@ -178,11 +182,17 @@ async def extrair_situacao_modal(page):
         img_url = "https://cna.oab.org.br" + img_url
     img_data = requests.get(img_url).content
     image = Image.open(BytesIO(img_data))
-    texto = pytesseract.image_to_string(image, lang="eng")
-    for palavra in ["REGULAR", "SUSPENSO", "CANCELADO", "INATIVO"]:
-        if palavra in texto.upper():
-            return palavra
-    return texto.strip()
+    try:
+        texto = pytesseract.image_to_string(image, lang="por")
+    except Exception:
+        texto = pytesseract.image_to_string(image, lang="eng")
+    texto_limpo = texto.upper().replace('\n', ' ').replace('\r', ' ').strip()
+    texto_limpo = remover_acentos(texto_limpo)
+    situacoes = ["REGULAR", "SUSPENSO", "CANCELADO", "INATIVO", "IRREGULAR", "FALECIDO"]
+    for palavra in situacoes:
+        if re.search(palavra, texto_limpo):
+            return palavra.capitalize()
+    return texto_limpo
 
 
 async def scrape_oab_async(name: str, uf: str) -> Dict[str, Any]:
@@ -319,5 +329,6 @@ if __name__ == "__main__":
             print(f"   Categoria      : {resultado['categoria']}")
             print(f"   Data Inscricao : {resultado['data_inscricao']}")
             print(f"   Situacao       : {resultado['situacao']}")
+
 
 

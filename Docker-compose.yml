@@ -1,0 +1,71 @@
+version: "3.8"
+
+services:
+  # Servidor da API do Scraper
+  scraper-api:
+    build: .
+    container_name: oab-scraper-api
+    ports:
+      - "8000:8000"
+    environment:
+      - SCRAPER_API_URL=http://localhost:8000
+      - LLM_PROVIDER=${LLM_PROVIDER:-mock}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-3.5-turbo}
+      - CF_ACCOUNT_ID=${CF_ACCOUNT_ID}
+      - CF_API_TOKEN=${CF_API_TOKEN}
+      - CF_MODEL=${CF_MODEL:-@cf/tinyllama-1.1b-chat}
+      - MAX_ITERATIONS=${MAX_ITERATIONS:-5}
+      - TIMEOUT=${TIMEOUT:-120}
+      - VERBOSE=${VERBOSE:-true}
+      - HEADLESS=${HEADLESS:-true}
+      - BROWSER_TIMEOUT=${BROWSER_TIMEOUT:-120000}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - oab-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    command: ["python", "scraper/api.py"]
+
+  # Agente LLM
+  llm-agent:
+    build: .
+    container_name: oab-llm-agent
+    ports:
+      - "8001:8001"
+    environment:
+      - SCRAPER_API_URL=http://scraper-api:8000
+      - LLM_PROVIDER=${LLM_PROVIDER:-mock}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-3.5-turbo}
+      - CF_ACCOUNT_ID=${CF_ACCOUNT_ID}
+      - CF_API_TOKEN=${CF_API_TOKEN}
+      - CF_MODEL=${CF_MODEL:-@cf/tinyllama-1.1b-chat}
+      - MAX_ITERATIONS=${MAX_ITERATIONS:-5}
+      - TIMEOUT=${TIMEOUT:-120}
+      - VERBOSE=${VERBOSE:-true}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - oab-network
+    depends_on:
+      scraper-api:
+        condition: service_healthy
+    restart: unless-stopped
+    command: ["python", "agent/llm_agent.py"]
+
+networks:
+  oab-network:
+    driver: bridge
+
+volumes:
+  logs:
+    driver: local

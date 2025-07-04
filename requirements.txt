@@ -12,3 +12,9 @@ uvicorn[standard]>=0.22.0  # Servidor ASGI para rodar a API FastAPI
 langchain  # Framework para construção de aplicações com LLMs (Large Language Models)
 langchain_community  # Componentes e integrações da comunidade para LangChain
 langchain_openai  # Integração do LangChain com modelos da OpenAI
+langchain_core  # Componentes core do LangChain
+requests  # Para fazer requisições HTTP ao Cloudflare Workers AI
+python-dotenv  # Para carregar variáveis de ambiente do arquivo .env
+pytest  # Para testes
+pytest-asyncio  # Para testes assíncronos
+httpx  # Cliente HTTP para testes (usado pelo TestClient do FastAPI)

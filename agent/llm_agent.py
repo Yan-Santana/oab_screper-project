@@ -1,5 +1,6 @@
 import os
 import re
+import requests
 from typing import List, Optional, Dict, Any, Union
 from langchain.agents import AgentExecutor, create_react_agent
 from langchain.prompts import PromptTemplate
@@ -39,49 +40,63 @@ class OABAgent:
         
     def _setup_llm(self):
         ''' COnfig o modelo de linguagem escolhido '''
-        if self.llm_provider == "openai": 
-            return ChatOpenAI(model="gpt-3.5-turbo",
-                              temperature=0.1,
-                              max_tokens=1000)
+        if self.llm_provider == "openai" or self.llm_provider == "cloudflare_openai":
+            # Configura o endpoint e o token do Cloudflare
+            os.environ["OPENAI_API_KEY"] = os.getenv("OPENAI_API_KEY", "cf_dummy_key")
+            os.environ["OPENAI_API_BASE"] = os.getenv("OPENAI_API_BASE")
+            # O LangChain já pega essas variáveis automaticamente
+            return ChatOpenAI(
+                model=os.getenv("OPENAI_MODEL", "@cf/tinyllama/tinyllama-1.1b-chat-v1.0"),
+                temperature=0.1,
+                max_tokens=1000,
+                openai_api_key=os.getenv("OPENAI_API_KEY", "cf_dummy_key"),
+                openai_api_base=os.getenv("OPENAI_API_BASE"),
+                # Passa o token do Cloudflare no header Authorization
+                default_headers={"Authorization": f"Bearer {os.getenv('CF_API_TOKEN')}"}
+            )
         elif self.llm_provider == "ollama":
             return Ollama(model="llama2",
                           temperature=0.1)
+        elif self.llm_provider == "cloudflare":
+            return CloudflareLLM()
         else:
             return MockLLM() # Para testes local
     
     def _create_prompt(self) -> PromptTemplate:
         ''' Cria o prompt para o agente '''
         template = """
-Você é um assistente especializado em consultas sobre advogados cadastrados na OAB(Ordem dos Advogados do Brasil).
+Responda apenas preenchendo o template abaixo, sem explicações, sem repetir o exemplo, sem comentários extras.
 
-Você tem acesso à seguinte ferramenta:
-{tools}
+IMPORTANTE: Siga exatamente o formato ReAct abaixo. Não adicione nada além do que está no template.
 
-Use o seguinte formato para responder:
+Template:
+Pergunta: {input}
+Pensamento: <explique seu raciocínio>
+Ação: oab_search
+Entrada da ação: {{"name": "<nome do advogado>", "uf": "<UF>"}}
+Observação: <resultado da busca>
+Pensamento: Agora eu sei a resposta final.
+Resposta Final: <resposta final>
 
-pergunta: a pergunta de entrada
-pensamente: Você deve sempre pensar sobre o que fazer
-ação: a ação a tomar, dever ser umas das [{tool_names}]
-Entrada da ação: a entrada para a ação
-observação: o resultado da ação
-... (este Pensamento/Ação/Entrada da ação/Observação pode ser repetir N vezes)
-Pensamento: Agora eu sei a resposta final
-Resposta Final: A resposta final para a pergunta original
+Exemplo:
+Pergunta: Qual o número da OAB de João Silva de SP?
+Pensamento: Preciso buscar informações sobre João Silva em SP.
+Ação: oab_search
+Entrada da ação: {{"name": "João Silva", "uf": "SP"}}
+Observação: {{"oab": "123456", "name": "João Silva", "uf": "SP", "categoria": "Advogado", "data_inscricao": "01/01/2000", "situacao": "Ativo"}}
+Pensamento: Agora eu sei a resposta final.
+Resposta Final: O número da OAB de João Silva (SP) é 123456. Situação: Ativo.
 
-Instruções Importantes:
-1. Sempre responda em português do Brasil
-2. Seja claro e objetivo nas respostas
-3. Se não encontrar dados, explique o motivo
-4. Para buscar um advogado, você precisa do nome completo e da UF/Seccional
-5. Se a pergunta não fornecer o nome completo ou a UF/Seccional, pergunte ao usuário
-6. Formate as respostas de forma amigável e profissional, pode usar emojis se achar necessário
+Apenas preencha o template acima para a pergunta abaixo.
 
 Pergunta: {input}
 {agent_scratchpad}
+{tools}
+{tool_names}
 """
         return PromptTemplate(
             template=template,
-            input_variables=["input", "tools", "tool_names", "agent_scratchpad"]
+            input_variables=["input", "agent_scratchpad", "tools", "tool_names"]
         )
     
     def _create_agent(self) -> AgentExecutor:
@@ -96,9 +111,9 @@ Pergunta: {input}
         agent_executor = AgentExecutor(
             agent=agent,
             tools=self.tools,
-            verbose=True,
+            verbose=False,
             handle_parsing_errors=True,
-            max_iterations=5,
+            max_iterations=20,
         )
         return agent_executor
 
@@ -124,6 +139,75 @@ Pergunta: {input}
         except Exception as e:
             logger.error(f"Erro ao processar pergunta: {str(e)}")
             return f"Desculpe, ocorreu um erro ao processar a pergunta: {str(e)}"
+
+
+class CloudflareLLM:
+    """LLM usando Cloudflare Workers AI"""
+    
+    def __init__(self):
+        from config import Config
+        self.account_id = Config.CF_ACCOUNT_ID
+        self.api_token = Config.CF_API_TOKEN
+        self.model = Config.CF_MODEL
+        self.temperature = 0.1
+        
+        if not self.account_id or not self.api_token:
+            raise ValueError("CF_ACCOUNT_ID e CF_API_TOKEN são obrigatórios para usar Cloudflare Workers AI")
+    
+    def invoke(self, prompt: Union[str, Any]) -> str:
+        """Invoca o modelo Cloudflare Workers AI"""
+        # Se for objeto StringPromptValue, extrai o texto
+        if not isinstance(prompt, str):
+            if hasattr(prompt, 'text'):
+                prompt_text = prompt.text
+            elif hasattr(prompt, 'value'):
+                prompt_text = prompt.value
+            else:
+                prompt_text = str(prompt)
+        else:
+            prompt_text = prompt
+        
+        try:
+            url = f"https://api.cloudflare.com/client/v4/accounts/{self.account_id}/ai/run/{self.model}"
+            headers = {
+                "Authorization": f"Bearer {self.api_token}",
+                "Content-Type": "application/json"
+            }
+            
+            data = {
+                "messages": [
+                    {"role": "system", "content": "You are a friendly assistant"},
+                    {"role": "user", "content": prompt_text}
+                ],
+                "temperature": 0.1
+            }
+            
+            response = requests.post(url, headers=headers, json=data, timeout=30)
+            response.raise_for_status()
+            
+            result = response.json()
+            if result.get("success") and result.get("result"):
+                return result["result"]["response"]
+            else:
+                logger.error(f"Erro na resposta do Cloudflare: {result}")
+                return "Erro ao processar resposta do Cloudflare Workers AI"
+                
+        except requests.exceptions.RequestException as e:
+            if hasattr(e, 'response') and e.response is not None:
+                logger.error(f"Resposta detalhada do Cloudflare: {e.response.text}")
+                logger.error(f"Status code: {e.response.status_code}")
+            logger.error(f"Erro na requisição para Cloudflare: {e}")
+            return f"Erro de conexão com Cloudflare Workers AI: {str(e)}"
+        except Exception as e:
+            logger.error(f"Erro inesperado no Cloudflare LLM: {e}")
+            return f"Erro inesperado: {str(e)}"
+    
+    def __call__(self, prompt: Union[str, Any]) -> str:
+        return self.invoke(prompt)
+
+    def bind(self, **kwargs):
+        """Garante compatibilidade com a interface esperada pelo LangChain"""
+        return self
 
 
 class MockLLM: 
@@ -192,33 +276,33 @@ class MockLLM:
         """ Garanti compatibilidade com a interface esperada pelo LangChain.."""
         return self
 
-def main():
-    ''' Função principal para testar o agente '''
-    print("Agente OAB LLM...")
-    print("Digite suas perguntas sobre advogados da OAB(Ordem dos Advogados do Brasil)")
-    print("Digite 'sair' para encerrar")
-    print()
-    
-    agent = OABAgent(llm_provider="mock")
-    
-    while True:
-        try:
-            question = input("Pergunta: ").strip()
-            if question.lower() in ["sair", "exit", "quit"]:
-                print("Encerrando o agente...")
-                break
-            if not question:
-                continue
-            print("\nProcessando")
-            response = agent.query(question)
-            print(f"\nResposta: {response}")
-            print("\n" + "-"*50)
-        except KeyboardInterrupt:
-            print("\nEncerrando o agente...")
-            break
-        except Exception as e:
-            print(f"\nErro inesperado: {str(e)}")
-        
-if __name__ == "__main__":
-    main()
+# def main():
+#     ''' Função principal para testar o agente '''
+#     print("Agente OAB LLM...")
+#     print("Digite suas perguntas sobre advogados da OAB(Ordem dos Advogados do Brasil)")
+#     print("Digite 'sair' para encerrar")
+#     print()
+#     
+#     agent = OABAgent(llm_provider="mock")
+#     
+#     while True:
+#         try:
+#             question = input("Pergunta: ").strip()
+#             if question.lower() in ["sair", "exit", "quit"]:
+#                 print("Encerrando o agente...")
+#                 break
+#             if not question:
+#                 continue
+#             print("\nProcessando")
+#             response = agent.query(question)
+#             print(f"\nResposta: {response}")
+#             print("\n" + "-"*50)
+#         except KeyboardInterrupt:
+#             print("\nEncerrando o agente...")
+#             break
+#         except Exception as e:
+#             print(f"\nErro inesperado: {str(e)}")
+#         
+# if __name__ == "__main__":
+#     main()
         

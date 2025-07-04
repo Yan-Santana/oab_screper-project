@@ -1,5 +1,9 @@
 import os
 from typing import Optional
+from dotenv import load_dotenv
+
+# Carregar variáveis de ambiente do arquivo .env
+load_dotenv()
 
 class Config:
     """Configurações do agente OAB"""
@@ -21,7 +25,7 @@ class Config:
     # Cloudflare Workers AI
     CF_ACCOUNT_ID: Optional[str] = os.getenv("CF_ACCOUNT_ID")
     CF_API_TOKEN: Optional[str] = os.getenv("CF_API_TOKEN")
-    CF_MODEL: str = os.getenv("CF_MODEL", "@cf/tinyllama-1.1b-chat")
+    CF_MODEL: str = os.getenv("CF_MODEL", "@cf/meta/llama-2-7b-chat-int8")
     
     # Configurações gerais
     MAX_ITERATIONS: int = int(os.getenv("MAX_ITERATIONS", "5"))
