@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 OAB Scraper + LLM Agent - Script Principal
 

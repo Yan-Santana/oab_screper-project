@@ -275,34 +275,3 @@ class MockLLM:
     def bind(self, **kwargs):
         """ Garanti compatibilidade com a interface esperada pelo LangChain.."""
         return self
-
-# def main():
-#     ''' Função principal para testar o agente '''
-#     print("Agente OAB LLM...")
-#     print("Digite suas perguntas sobre advogados da OAB(Ordem dos Advogados do Brasil)")
-#     print("Digite 'sair' para encerrar")
-#     print()
-#     
-#     agent = OABAgent(llm_provider="mock")
-#     
-#     while True:
-#         try:
-#             question = input("Pergunta: ").strip()
-#             if question.lower() in ["sair", "exit", "quit"]:
-#                 print("Encerrando o agente...")
-#                 break
-#             if not question:
-#                 continue
-#             print("\nProcessando")
-#             response = agent.query(question)
-#             print(f"\nResposta: {response}")
-#             print("\n" + "-"*50)
-#         except KeyboardInterrupt:
-#             print("\nEncerrando o agente...")
-#             break
-#         except Exception as e:
-#             print(f"\nErro inesperado: {str(e)}")
-#         
-# if __name__ == "__main__":
-#     main()
-        
