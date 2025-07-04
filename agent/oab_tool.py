@@ -3,6 +3,10 @@ from pydantic import BaseModel, Field
 import requests
 import json
 from typing import Optional, Dict, Any, Type
+import os
+import logging
+
+logging.basicConfig(level=logging.ERROR)
 
 class OABSearchInput(BaseModel): # Modelo para entrada da ferramenta de busca OAB
     name: str = Field(..., description="Nome completo do advogado a ser buscado")
@@ -17,7 +21,7 @@ class OABSearchTool(BaseTool): # Ferramenta de busca OAB
     """
     
     args_schema: Type[BaseModel] = OABSearchInput
-    api_base_url: str = "http://localhost:8000"
+    api_base_url: str = "http://scraper-api:8000"
     
     def __init__(self, api_base_url: str = "http://localhost:8000"):
         super().__init__()
@@ -25,6 +29,7 @@ class OABSearchTool(BaseTool): # Ferramenta de busca OAB
         
     def _run(self, name: str, uf: str = None) -> str:
         ''' Executa a busca na API do scraper '''
+        
         # Corrige caso o campo 'name' venha como um JSON string (mock/teste)
         if isinstance(name, str) and name.strip().startswith('{') and name.strip().endswith('}'):
             try:
@@ -56,19 +61,17 @@ class OABSearchTool(BaseTool): # Ferramenta de busca OAB
                 data = response.json()
                 
                 if data.get("error"): # Se houver erro
-                    return f"Erroo na busca: {data['error']}"
+                    return f"Erro na busca: {data['error']}"
                 
-                result  = f"""
-Dados encontrados para {name} ({uf}):
-- Numero OAB: {data.get('oab', 'N/A')}
-- Nome: {data.get('nome'), 'N/A'}
-- UF: {data.get('uf', 'N/A')}
-- Categoria: {data.get('categoria', 'N/A')}
-- Data de Inscricao: {data.get('data_inscricao', 'N/A')}
-- Situacao: {data.get('situacao', 'N/A')}
-                """.strip()
-                
-                return result
+                result = {
+                    "oab": data.get("oab", "N/A"),
+                    "name": data.get("name", "N/A"),
+                    "uf": data.get("uf", "N/A"),
+                    "categoria": data.get("categoria", "N/A"),
+                    "data_inscricao": data.get("data_inscricao", "N/A"),
+                    "situacao": data.get("situacao", "N/A")
+                }
+                return json.dumps(result, ensure_ascii=False)
             else:
                 return f"Erro na API: {response.status_code} - {response.text}"
             

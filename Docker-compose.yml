@@ -42,7 +42,7 @@ services:
       - "8001:8001"
     environment:
       - SCRAPER_API_URL=http://scraper-api:8000
-      - LLM_PROVIDER=${LLM_PROVIDER:-mock}
+      - LLM_PROVIDER=${LLM_PROVIDER:-openai}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - OPENAI_MODEL=${OPENAI_MODEL:-gpt-3.5-turbo}
       - CF_ACCOUNT_ID=${CF_ACCOUNT_ID}
@@ -60,7 +60,7 @@ services:
       scraper-api:
         condition: service_healthy
     restart: unless-stopped
-    command: ["python", "agent/llm_agent.py"]
+    command: ["python", "main.py", "server", "--llm-provider", "openai"]
 
 networks:
   oab-network:

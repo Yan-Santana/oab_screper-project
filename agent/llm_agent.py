@@ -1,33 +1,35 @@
 import os
 import re
 import requests
+import json
 from typing import List, Optional, Dict, Any, Union
 from langchain.agents import AgentExecutor, create_react_agent
 from langchain.prompts import PromptTemplate
 from langchain_community.llms import Ollama
 from langchain_openai import ChatOpenAI
-from oab_tool import OABSearchTool
+from .oab_tool import OABSearchTool
 import logging
 
 # Config logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 
 class OABAgent:
     ''' Um Agente LLM para consultas sobre advogados na OAB '''
     
-    def __init__(self, api_base_url: str = "http://localhost:8000", llm_provider: str = "openai"):
+    def __init__(self, api_base_url: str = None, llm_provider: str = "openai"):
         ''' Inicializa o agente. 
         Args:
             api_base_url: URL base da API do scraper
             llm_provider: 'openai', 'ollama' ou pode ser o 'mock'
         '''
-        self.api_base_url = api_base_url
+        # Usar variável de ambiente se não fornecida
+        self.api_base_url = api_base_url or os.getenv("SCRAPER_API_URL", "http://scraper-api:8000")
         self.llm_provider = llm_provider
 
         # Iniciar ferramentas
-        self.tools = [OABSearchTool(api_base_url=api_base_url)]
+        self.tools = [OABSearchTool(api_base_url=self.api_base_url)]
         
         # Iniciar a LLM
         self.llm = self._setup_llm()
@@ -39,20 +41,47 @@ class OABAgent:
         self.agent = self._create_agent()
         
     def _setup_llm(self):
-        ''' COnfig o modelo de linguagem escolhido '''
-        if self.llm_provider == "openai" or self.llm_provider == "cloudflare_openai":
-            # Configura o endpoint e o token do Cloudflare
-            os.environ["OPENAI_API_KEY"] = os.getenv("OPENAI_API_KEY", "cf_dummy_key")
-            os.environ["OPENAI_API_BASE"] = os.getenv("OPENAI_API_BASE")
-            # O LangChain já pega essas variáveis automaticamente
+        ''' Config o modelo de linguagem escolhido '''
+        logger.info(f"Configurando LLM com provedor: {self.llm_provider}")
+        
+        if self.llm_provider == "openai":
+            # Configuração para OpenAI padrão
+            api_key = os.getenv("OPENAI_API_KEY")
+            model = os.getenv("OPENAI_MODEL", "gpt-3.5-turbo")
+            
+            logger.info(f"OpenAI API Key configurada: {api_key[:20]}..." if api_key else "NÃO configurada")
+            logger.info(f"OpenAI Model: {model}")
+            
+            if not api_key:
+                logger.warning("OPENAI_API_KEY não configurada. Usando mock LLM.")
+                return MockLLM()
+            
+            try:
+                llm = ChatOpenAI(
+                    model=model,
+                    temperature=0.1,
+                    max_tokens=1000,
+                    openai_api_key=api_key
+                )
+                logger.info("✅ ChatOpenAI configurado com sucesso!")
+                return llm
+            except Exception as e:
+                logger.error(f"Erro ao configurar ChatOpenAI: {e}")
+                logger.warning("Usando MockLLM como fallback")
+                return MockLLM()
+        elif self.llm_provider == "cloudflare_openai":
+            # Configuração para OpenAI via Cloudflare
+            api_key = os.getenv("OPENAI_API_KEY", "cf_dummy_key")
+            api_base = os.getenv("OPENAI_API_BASE")
+            cf_token = os.getenv("CF_API_TOKEN")
+            
             return ChatOpenAI(
                 model=os.getenv("OPENAI_MODEL", "@cf/tinyllama/tinyllama-1.1b-chat-v1.0"),
                 temperature=0.1,
                 max_tokens=1000,
-                openai_api_key=os.getenv("OPENAI_API_KEY", "cf_dummy_key"),
-                openai_api_base=os.getenv("OPENAI_API_BASE"),
-                # Passa o token do Cloudflare no header Authorization
-                default_headers={"Authorization": f"Bearer {os.getenv('CF_API_TOKEN')}"}
+                openai_api_key=api_key,
+                openai_api_base=api_base,
+                default_headers={"Authorization": f"Bearer {cf_token}"} if cf_token else {}
             )
         elif self.llm_provider == "ollama":
             return Ollama(model="llama2",
@@ -65,31 +94,33 @@ class OABAgent:
     def _create_prompt(self) -> PromptTemplate:
         ''' Cria o prompt para o agente '''
         template = """
-Responda apenas preenchendo o template abaixo, sem explicações, sem repetir o exemplo, sem comentários extras.
+You are an assistant that must strictly follow the ReAct format below to answer questions about Brazilian lawyers (OAB):
 
-IMPORTANTE: Siga exatamente o formato ReAct abaixo. Não adicione nada além do que está no template.
+Question: {input}
+Thought: <your reasoning>
+Action: oab_search
+Action Input: {{"name": "<full name>", "uf": "<UF>"}}
+Observation: <result of the search>
+Thought: Now I know the final answer.
+Final Answer: <final answer in Portuguese>
 
-Template:
-Pergunta: {input}
-Pensamento: <explique seu raciocínio>
-Ação: oab_search
-Entrada da ação: {{"name": "<nome do advogado>", "uf": "<UF>"}}
-Observação: <resultado da busca>
-Pensamento: Agora eu sei a resposta final.
-Resposta Final: <resposta final>
+IMPORTANT:
+- Always use the Action/Action Input/Observation steps, do not skip or change the format.
+- Do not answer directly, always use the tool.
+- If you do not have enough information, ask for the full name and UF.
+- After receiving the Observation, always proceed to the Final Answer. Do not repeat the Action step.
+- Always provide the Final Answer in Portuguese.
 
-Exemplo:
-Pergunta: Qual o número da OAB de João Silva de SP?
-Pensamento: Preciso buscar informações sobre João Silva em SP.
-Ação: oab_search
-Entrada da ação: {{"name": "João Silva", "uf": "SP"}}
-Observação: {{"oab": "123456", "name": "João Silva", "uf": "SP", "categoria": "Advogado", "data_inscricao": "01/01/2000", "situacao": "Ativo"}}
-Pensamento: Agora eu sei a resposta final.
-Resposta Final: O número da OAB de João Silva (SP) é 123456. Situação: Ativo.
+Example:
+Question: What is the OAB number of João Silva from SP?
+Thought: I need to search for João Silva in SP.
+Action: oab_search
+Action Input: {{"name": "João Silva", "uf": "SP"}}
+Observation: {{"oab": "123456", "name": "João Silva", "uf": "SP", "categoria": "Advogado", "data_inscricao": "01/01/2000", "situacao": "Ativo"}}
+Thought: Now I know the final answer.
+Final Answer: O número da OAB de João Silva (SP) é 123456. Situação: Ativo.
 
-Apenas preencha o template acima para a pergunta abaixo.
-
-Pergunta: {input}
+Question: {input}
 {agent_scratchpad}
 {tools}
 {tool_names}
@@ -111,7 +142,7 @@ Pergunta: {input}
         agent_executor = AgentExecutor(
             agent=agent,
             tools=self.tools,
-            verbose=False,
+            verbose=True,  # Habilitar verbose para debug
             handle_parsing_errors=True,
             max_iterations=20,
         )
@@ -126,18 +157,14 @@ Pergunta: {input}
             A resposta do agente
         """
         try:
-            logger.info(f"Processando pergunta: {question}")
-            
             # Executa o agente
             result = self.agent.invoke({"input": question})
             
             # Extrair resposta
             response = result.get("output", "Não foi possível processar a pergunta")
             
-            logger.info(f"Resposta gerada: {response}")
             return response
         except Exception as e:
-            logger.error(f"Erro ao processar pergunta: {str(e)}")
             return f"Desculpe, ocorreu um erro ao processar a pergunta: {str(e)}"
 
 

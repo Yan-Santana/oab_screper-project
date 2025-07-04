@@ -9,10 +9,38 @@ import asyncio
 import sys
 import os
 from pathlib import Path
+import logging
 
 # Adicionar diretórios ao path
 sys.path.append(str(Path(__file__).parent / "scraper"))
 sys.path.append(str(Path(__file__).parent / "agent"))
+
+# Silenciar TODOS os logs de forma mais agressiva
+logging.basicConfig(level=logging.CRITICAL, force=True)
+logging.getLogger().setLevel(logging.CRITICAL)
+
+# Silenciar todos os loggers específicos
+for logger_name in ["openai", "httpx", "httpcore", "urllib3", "requests", "langchain", "agent", "langchain_core", "langchain_community"]:
+    logging.getLogger(logger_name).setLevel(logging.CRITICAL)
+    logging.getLogger(logger_name).disabled = True
+
+# Silenciar warnings
+import warnings
+warnings.filterwarnings("ignore")
+
+# Redirecionar stdout para /dev/null para logs que não respeitam o logging
+import sys
+import os
+
+# Salvar stdout original
+original_stdout = sys.stdout
+
+# Função para suprimir stdout temporariamente
+def suppress_output():
+    sys.stdout = open(os.devnull, 'w')
+
+def restore_output():
+    sys.stdout = original_stdout
 
 def main():
     parser = argparse.ArgumentParser(
@@ -29,7 +57,7 @@ Exemplos de uso:
     
     parser.add_argument(
         "command",
-        choices=["api", "agent", "test", "query"],
+        choices=["api", "agent", "server", "test", "query"],
         help="Comando a executar"
     )
     
@@ -59,6 +87,8 @@ Exemplos de uso:
         run_api(args.port)
     elif args.command == "agent":
         run_agent(args.llm_provider)
+    elif args.command == "server":
+        run_agent_server(args.llm_provider)
     elif args.command == "test":
         run_test()
     elif args.command == "query":
@@ -153,19 +183,58 @@ def run_test():
         print(f"❌ Erro no teste: {e}")
         sys.exit(1)
 
-def run_query(query_text, llm_provider="mock"):
-    """Executar consulta rápida"""
-    print(f"🔍 Executando consulta: {query_text}")
+def run_agent_server(llm_provider="mock"):
+    """Executar agente LLM como servidor"""
+    print(f"🤖 Iniciando agente LLM como servidor (provedor: {llm_provider})...")
     
     try:
         from agent.llm_agent import OABAgent
         
         agent = OABAgent(llm_provider=llm_provider)
+        
+        print("✅ Agente LLM inicializado e pronto!")
+        print("🔄 Aguardando consultas...")
+        print("💡 Para testar, use: docker exec oab-llm-agent python main.py query 'sua pergunta'")
+        
+        # Manter o processo rodando sem tentar ler input
+        import time
+        import signal
+        
+        def signal_handler(signum, frame):
+            print("\n🛑 Encerrando agente LLM...")
+            sys.exit(0)
+        
+        signal.signal(signal.SIGINT, signal_handler)
+        signal.signal(signal.SIGTERM, signal_handler)
+        
+        while True:
+            time.sleep(60)  # Aguardar 1 minuto
+            print("🔄 Agente LLM ainda ativo...")
+            
+    except ImportError as e:
+        print(f"Erro: Dependências não encontradas: {e}")
+        sys.exit(1)
+    except Exception as e:
+        print(f"Erro ao iniciar agente servidor: {e}")
+        sys.exit(1)
+
+def run_query(query_text, llm_provider="mock"):
+    """Executar consulta rápida"""
+    try:
+        # Suprimir output durante a execução
+        suppress_output()
+        
+        from agent.llm_agent import OABAgent
+        
+        agent = OABAgent(llm_provider=llm_provider)
         response = agent.query(query_text)
         
-        print(f"\nResposta: {response}")
+        # Restaurar output para mostrar apenas a resposta
+        restore_output()
+        print(response)
         
     except Exception as e:
+        restore_output()
         print(f"Erro na consulta: {e}")
         sys.exit(1)
 
